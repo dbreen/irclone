@@ -1,7 +1,7 @@
 import array
 import board
-import gc
 import pulseio
+import os
 import time
 
 from adafruit_circuitplayground.express import cpx
@@ -13,25 +13,28 @@ class IRClone:
     # Store up to this many different codes
     max_codes = 5
     # If we don't get at least 50 pulses, we'll consider it a bad code
-    threshold = 50
+    min_pulses = 50
+    # Start of NEC spec is a 9ms burst, and shouldn't get anything over 1500ish
+    threshold_start = (8500, 9500)
+    threshold_stop = 2000  # Anything over this ends the signal
 
     error = (255, 0, 0)  # Red = something wrong
     program_mode = (255, 0, 255)  # Purple = programming the codes in
     output_mode = (0, 0, 255)  # Blue = read to blast IR
     info = (32, 64, 128)  # Light blue = flashing some info
 
+    # Keep re-sending this signal if the button is held down (NEC spec)
+    repeat_code = array.array('H', (9000, 2250, 563))
+
     def __init__(self):
         try:
-            with open("text.txt", "w") as f:
+            with open("test.txt", "w") as f:
                 f.write("writable")
                 self.writeable = True
+                os.unlink("test.txt")
         except OSError:
             # We're not in a writeable mode (likely connected to the computer)
             self.writeable = False
-
-        # Used A2/3 to look at the output on the scope...is there a way to tie a pin to the TX out?
-        # self.pulsein = pulseio.PulseIn(board.A3, maxlen=100, idle_state=True)
-        # pwm = pulseio.PWMOut(board.A2, frequency=38000, duty_cycle=2**15)
 
         self.pulsein = pulseio.PulseIn(board.REMOTEIN, maxlen=100, idle_state=True)
         pwm = pulseio.PWMOut(board.REMOTEOUT, frequency=38000, duty_cycle=2**15)
@@ -61,6 +64,7 @@ class IRClone:
                     self.countup()
                 self.do_pixels(self.program_mode, self.current)
             else:
+                # Switch right (off), we're in transmit mode
                 if cpx.button_a:
                     self.blast_ir()
                 elif cpx.button_b:
@@ -78,16 +82,34 @@ class IRClone:
         time.sleep(1)
         # Pause while we do something with the pulses
         self.pulsein.pause()
-        if len(self.pulsein) < self.threshold:
+
+        if self.debug:
+            print("Raw pulses: ", [self.pulsein[i] for i in range(len(self.pulsein))])
+
+        # Comb over the pulses, and look for one that's over the starting threshold before
+        # beginning to save to our real list. Then stop if over the stop threshold.
+        as_list = []
+        started = False
+        for i in range(len(self.pulsein)):
+            ms = self.pulsein[i]
+            if not started and self.threshold_start[0] <= ms <= self.threshold_start[1]:
+                started = True
+            elif ms >= self.threshold_stop and len(as_list) >= 2:
+                # We hit a pulse length over our threshold, but past 2 (first two are 9000ish and 4500ish)
+                break
+            if started:
+                as_list.append(ms)
+
+        if self.debug:
+            print("[{}] Heard: {} Pulses: ".format(self.current, len(as_list)), as_list)
+
+        # Didn't get enough pulse data for this to be a real code
+        if len(self.pulsein) < self.min_pulses:
             self.flash_pixels(self.error, self.current)
             return
-        as_list = [self.pulsein[i] for i in range(len(self.pulsein))]
-        if self.debug:
-            print("[{}] Heard: {} Pulses: ".format(self.current, len(self.pulsein)), as_list)
+
         self.flash_pixels((0, 255, 0), self.current)
         self.pulses[self.current] = array.array('H', as_list)
-        if self.debug:
-            print("Free mem: {}".format(gc.mem_free()))
         if self.writeable:
             self.save()
     
@@ -97,14 +119,15 @@ class IRClone:
             print("No pulses loaded")
             self.flash_pixels(self.error, self.current)
             return
-        print("Sending...")
+        print("Sending code ", self.current)
         if self.debug:
             print("[{}] Sending: ".format(self.current), pulse)
+        self.pulseout.send(pulse)
+
         while True:
-            self.pulseout.send(pulse)
             if not cpx.button_a:
                 break  # Keep sending until the button is released 
-            time.sleep(.1)
+            self.pulseout.send(self.repeat_code)
         self.flash_pixels((0, 0, 255), self.current)
     
     def save(self):
@@ -128,7 +151,7 @@ class IRClone:
                 pass  # No code at this register
         if found:
             self.flash_loaded()
-    
+
     def flash_loaded(self):
         # Flash the registers that have a stored code
         self.clear_pixels()

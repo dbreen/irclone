@@ -20,7 +20,7 @@ To load, put the switch towards the A button, turning the current register LED p
 
 ### Transmitting codes
 
-Once there is at least one code stored, you can flip the switch towards B, which will turn the current slot LED blue. Use the B button to flip through the slots, and pressing A will transmit that register's stored code. The LED will flash blue once it's transmitted. You can hold down A to spam the signal.
+Once there is at least one code stored, you can flip the switch towards B, which will turn the current slot LED blue. Use the B button to flip through the slots, and pressing A will transmit that register's stored code. The LED will flash blue once it's transmitted. Holding down A will send the repeat signal, as defined by the NEC spec (kind of untested).
 
 ### Misc
 
@@ -32,9 +32,8 @@ Once there is at least one code stored, you can flip the switch towards B, which
 - I was having trouble re-playing codes when using a LiPo battery pack - maybe the IR signal wasn't strong enough? Using a 3xAA battery pack seems to work.
 - To enable writing codes, the switch has to be towards B _on startup_.
 - Background IR can cause the recording to finish early and not get the correct code - best to press the remote control button quickly after the flashing purple, and program them in a "clean" environment.
-- I just cannot get the volume buttons to work on my TV...the codes look the same as other buttons that work, but the TV ignores the volume commands. WTF.
-- I'm hitting weird memory errors adding features - I might be at the point where I need to compile to an mpy file to keep the memory footprint low.
 - It's handy using a cellphone camera to look at the IR LED and make sure it's transmitting.
+- I finally read the NEC protocol spec, and so now I clean up the raw pulse signal by chopping off the highs/lows at the start/end, leaving a pretty good guess at the real code (this is still raw in that it's not decoding the signal, just repeating what it sees coming in)
 
 ### Credits
 
